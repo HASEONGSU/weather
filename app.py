@@ -1,54 +1,67 @@
 import streamlit as st
 import requests
+from datetime import datetime, timedelta
 
-# 주요 도시 목록
-cities = {
-    "New York": "5128581",
-    "London": "2643743",
-    "Paris": "2988507",
-    "Seoul": "1835848",
-    "Tokyo": "1850147",
-    "Beijing": "1816670",
-    "Sydney": "2147714"
-}
+# API 키
+API_KEY_KMA = st.secrets.get("kma_service_key")
+API_KEY_OWM = st.secrets.get("openweathermap_api_key")
 
-# 🔐 API 키 안전하게 가져오기 (예외 처리 포함)
-API_KEY = st.secrets.get("openweathermap_api_key", None)
-if not API_KEY:
-    st.error("⚠️ OpenWeatherMap API 키가 설정되어 있지 않습니다. .streamlit/secrets.toml을 확인하세요.")
+if not API_KEY_KMA:
+    st.error("⚠️ 기상청 단기예보 API 키가 없습니다.")
     st.stop()
 
-def get_weather(city_id):
-    url = f"http://api.openweathermap.org/data/2.5/weather?id={city_id}&appid={API_KEY}&units=metric"
-    res = requests.get(url)
-    data = res.json()
-    return {
-        "Temperature": f"{data['main']['temp']}°C",
-        "Weather": data['weather'][0]['description'].title()
+# 주요 도시와 기상청 격자 좌표 (nx, ny)
+cities = {
+    "Seoul": (60, 127),
+    "Busan": (98, 76),
+    "Incheon": (55, 124),
+    "New York": (72, 141),  # 예시 좌표, 실제 사용 불가
+    "London": (50, 120),    # 예시 좌표, 실제 사용 불가
+}
+
+def get_kma_weather(nx, ny):
+    now = datetime.utcnow() + timedelta(hours=9)
+    base_date = now.strftime("%Y%m%d")
+    base_time = f"{(now.hour // 3) * 3:02}00"
+
+    url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
+    params = {
+        "serviceKey": API_KEY_KMA,
+        "base_date": base_date,
+        "base_time": base_time,
+        "nx": nx,
+        "ny": ny,
+        "numOfRows": 1000,
+        "pageNo": 1,
+        "dataType": "JSON"
     }
 
-def get_air_quality(city_id):
-    url = f"http://api.openweathermap.org/data/2.5/air_pollution?appid={API_KEY}&id={city_id}"
-    res = requests.get(url)
-    data = res.json()
-    pm2_5 = data['list'][0]['components']['pm2_5']
-    return f"{pm2_5} μg/m³"
+    res = requests.get(url, params=params)
+    if res.status_code != 200:
+        return {"error": "API 호출 실패"}
+
+    items = res.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
+    forecast = {item['category']: item['fcstValue'] for item in items if item['fcstDate'] == base_date}
+
+    return {
+        "Temperature": forecast.get("TMP", "N/A") + "°C",
+        "Weather": forecast.get("WFK", "맑음")
+    }
 
 def main():
-    st.title("🌍 세계 도시 날씨 & 미세먼지 정보")
+    st.title("🌍 세계 도시 날씨 정보 (기상청 API)")
 
     city = st.selectbox("도시를 선택하세요", list(cities.keys()))
 
-    if st.button("정보 보기"):
-        city_id = cities[city]
-        with st.spinner("데이터 가져오는 중..."):
-            weather = get_weather(city_id)
-            air_quality = get_air_quality(city_id)
-
-        st.markdown(f"### 📍 {city}")
-        st.write(f"🌤️ 날씨: {weather['Weather']}")
-        st.write(f"🌡️ 기온: {weather['Temperature']}")
-        st.write(f"🌫️ PM2.5(미세먼지): {air_quality}")
+    if st.button("날씨 보기"):
+        nx, ny = cities[city]
+        weather = get_kma_weather(nx, ny)
+        if "error" in weather:
+            st.error(weather["error"])
+        else:
+            st.markdown(f"### 📍 {city}")
+            st.write(f"🌡️ 기온: {weather['Temperature']}")
+            st.write(f"🌤️ 날씨: {weather['Weather']}")
 
 if __name__ == "__main__":
     main()
