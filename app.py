@@ -1,67 +1,43 @@
 import streamlit as st
 import requests
-from datetime import datetime, timedelta
+from bs4 import BeautifulSoup
 
-# API 키
-API_KEY_KMA = st.secrets.get("kma_service_key")
-API_KEY_OWM = st.secrets.get("openweathermap_api_key")
+st.set_page_config(page_title="세계 주요 도시 날씨", layout="centered")
 
-if not API_KEY_KMA:
-    st.error("⚠️ 기상청 단기예보 API 키가 없습니다.")
-    st.stop()
+st.title("🌏 세계 주요 도시 날씨 정보")
+st.markdown("※ 데이터 출처: [기상청 세계날씨](https://www.weather.go.kr/w/theme/world-weather.do)")
 
-# 주요 도시와 기상청 격자 좌표 (nx, ny)
-cities = {
-    "Seoul": (60, 127),
-    "Busan": (98, 76),
-    "Incheon": (55, 124),
-    "New York": (72, 141),  # 예시 좌표, 실제 사용 불가
-    "London": (50, 120),    # 예시 좌표, 실제 사용 불가
+# 도시 목록 (기상청 웹사이트 기준 일부 예시)
+city_dict = {
+    "서울 (Seoul)": "182",
+    "도쿄 (Tokyo)": "237",
+    "뉴욕 (New York)": "133",
+    "런던 (London)": "96",
+    "베이징 (Beijing)": "25",
+    "하노이 (Hanoi)": "61",
+    "시드니 (Sydney)": "173",
+    "파리 (Paris)": "157",
+    "싱가포르 (Singapore)": "166"
 }
 
-def get_kma_weather(nx, ny):
-    now = datetime.utcnow() + timedelta(hours=9)
-    base_date = now.strftime("%Y%m%d")
-    base_time = f"{(now.hour // 3) * 3:02}00"
+city_name = st.selectbox("도시를 선택하세요", list(city_dict.keys()))
 
-    url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
-    params = {
-        "serviceKey": API_KEY_KMA,
-        "base_date": base_date,
-        "base_time": base_time,
-        "nx": nx,
-        "ny": ny,
-        "numOfRows": 1000,
-        "pageNo": 1,
-        "dataType": "JSON"
-    }
+if city_name:
+    city_code = city_dict[city_name]
+    url = f"https://www.weather.go.kr/w/theme/world-weather.do?worldWeatherType=WORLDW&worldWeatherCode={city_code}"
 
-    res = requests.get(url, params=params)
-    if res.status_code != 200:
-        return {"error": "API 호출 실패"}
+    try:
+        response = requests.get(url)
+        soup = BeautifulSoup(response.text, "html.parser")
 
-    items = res.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
-    forecast = {item['category']: item['fcstValue'] for item in items if item['fcstDate'] == base_date}
+        temp = soup.select_one(".weather_table td.temp")
+        desc = soup.select_one(".weather_table td.weather")
 
-    return {
-        "Temperature": forecast.get("TMP", "N/A") + "°C",
-        "Weather": forecast.get("WFK", "맑음")
-    }
-
-def main():
-    st.title("🌍 세계 도시 날씨 정보 (기상청 API)")
-
-    city = st.selectbox("도시를 선택하세요", list(cities.keys()))
-
-    if st.button("날씨 보기"):
-        nx, ny = cities[city]
-        weather = get_kma_weather(nx, ny)
-        if "error" in weather:
-            st.error(weather["error"])
+        if temp and desc:
+            st.subheader(f"📍 {city_name}")
+            st.metric("기온", temp.text.strip())
+            st.markdown(f"**날씨 상태**: {desc.text.strip()}")
         else:
-            st.markdown(f"### 📍 {city}")
-            st.write(f"🌡️ 기온: {weather['Temperature']}")
-            st.write(f"🌤️ 날씨: {weather['Weather']}")
-
-if __name__ == "__main__":
-    main()
+            st.error("❌ 날씨 정보를 찾을 수 없습니다.")
+    except Exception as e:
+        st.error(f"오류 발생: {e}")
