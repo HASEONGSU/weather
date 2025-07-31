@@ -12,11 +12,7 @@ cities = {
     "Sydney": "2147714"
 }
 
-# 🔐 API 키 안전하게 가져오기 (예외 처리 포함)
-API_KEY = st.secrets.get("openweathermap_api_key", None)
-if not API_KEY:
-    st.error("⚠️ OpenWeatherMap API 키가 설정되어 있지 않습니다. .streamlit/secrets.toml을 확인하세요.")
-    st.stop()
+API_KEY = st.secrets["openweathermap_api_key"]
 
 def get_weather(city_id):
     url = f"http://api.openweathermap.org/data/2.5/weather?id={city_id}&appid={API_KEY}&units=metric"
